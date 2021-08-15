@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Usage: Run or source this script
+
+kill_proc_tree(){  
+  # Brief: Kill all processes that are descendants of the given process
+  # Usage: killptree [-s <signal>] [-k <kill after seconds>] [-w] <pid>
+  # Default: -s SIGTERM; -k 0.1; No wait
+  # Note: If no final SIGKILL is to be provided, use -k n where n<0
+
+  local OPTIND=1 opt signal=TERM killafter=0.1 wait=false pid child_pid
+  local -a wait_for=()
+  while getopts s:k:w opt; do
+    case "${opt}" in
+      s) signal="${OPTARG}";;
+      k) killafter="${OPTARG//[[:alpha:][:blank:]]*/}";;
+      w) wait=true;;
+      # The regex cuts off 'seconds' or 's' from -k 0.3s or -k "0.3 seconds"
+    esac
+  done
+  pid="${!OPTIND}"; [[ -n "${pid}" ]] || { echo "Usage: ${0} [-s signal] [-k kill_after_s] [-w] pid" >/dev/tty; return 1;}
+
+  for child_pid in $(pgrep -P "${pid}"); do
+    kill_proc_tree -s "${signal}" -k "${killafter}" "${child_pid}" & wait_for+=( $! )
+    # Each child_pid has its own separate tree. So handling each concurrently in background
+  done
+  
+  "${wait}" && [[ -n "${wait_for}" ]] && wait "${wait_for[@]}"
+  # Waiting for mercenaries to return after killing the (great)(grand)children
+
+  kill -"${signal}" "${pid}"; sleep "${killafter}" && kill -KILL "${pid}" # Murder the father
+} &>/dev/null; export kill_proc_tree
+
+[[ "${0##*/}" != "${BASH_SOURCE##*/}" ]] || kill_proc_tree "${@}"
